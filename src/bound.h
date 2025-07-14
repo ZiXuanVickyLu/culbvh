@@ -82,6 +82,9 @@ namespace culbvh {
 		CUDA_INLINE_CALLABLE point_t center() const {
 			return (min + max) * T(0.5);
 		}
+		CUDA_INLINE_CALLABLE  T width()  const { return max.x - min.x; }
+		CUDA_INLINE_CALLABLE  T height() const { return max.y - min.y; }
+		CUDA_INLINE_CALLABLE  T depth()  const { return max.z - min.z; }
 
 		CUDA_INLINE_CALLABLE point_t diagonal() const {
 			return max - min;

@@ -18,6 +18,7 @@
 #include <tbb/parallel_for.h>
 #include <atomic>
 #include <tbb/concurrent_unordered_set.h>
+#include <chrono>
 
 namespace culbvh {
 
