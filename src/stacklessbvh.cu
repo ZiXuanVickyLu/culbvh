@@ -549,7 +549,7 @@ namespace culbvh {
             }
         }
 
-		__global__ void quantilizedStacklessCDShared(uint Size, const aabb* _box, const int* sortedIdx,
+		__global__ void quantilizedStacklessCDSharedOther(uint Size, const aabb* _box, const int* sortedIdx,
             const int intSize, const int* _lvs_idx,
             const aabb* scene, const ulonglong2* _nodes,
             int* resCounter, int2* res, const int maxRes) {
@@ -640,45 +640,179 @@ namespace culbvh {
             }
         }
 
-        template<bool SELF>
-        __global__ void stacklessCD(uint32_t Size, const aabb* _box,
+        __global__ void StacklessCDSharedSelf(uint Size, const aabb* _box,
             const int intSize, const int* _lvs_idx,
             const stacklessnode* _nodes,
-            int* _cpNum, int* _cpRes) {
-            int idx = blockIdx.x * blockDim.x + threadIdx.x;
-            if (idx >= Size) return;
-            stacklessnode node;
+            int* resCounter, int2* res, const int maxRes) {
+            int tid = blockIdx.x * blockDim.x + threadIdx.x;
+            bool active = tid < Size;
+            int idx;
+            aabb bv;
+            if (active) {
+                idx = _lvs_idx[tid];
+				bv = _box[idx];
+            }
+
+            __shared__ int2 sharedRes[MAX_RES_PER_BLOCK];
+            __shared__ int sharedCounter;		// How many results are cached in shared memory
+            __shared__ int sharedGlobalIdx;		// Where to write in global memory
+            if (threadIdx.x == 0)
+                sharedCounter = 0;
+
             int st = 0;
-            int count = 0;
-            const aabb bv = _box[idx];
-            do {
-                node = _nodes[st];
-                if (node.bound.intersects(bv)) {
-                    if (node.lc == -1) {
-                        int temp_idx = _lvs_idx[st - intSize];
-                        if (SELF) {
-                            if (temp_idx < idx) {
-                                _cpRes[count + idx * MAX_CD_NUM_PER_VERT] = temp_idx;
-                                printf("%d   %d\n", temp_idx, idx);
-                                count++;
+            stacklessnode node;
+            while (true) {
+                __syncthreads();
+                if (active) {
+                    while (st != -1)
+                    {
+                        node = _nodes[st];
+                        if (node.bound.intersects(bv)) {
+                            if (node.lc == -1) {
+                                if (tid < st - intSize) {
+                                    int sIdx = atomicAdd(&sharedCounter, 1);
+                                    if (sIdx >= MAX_RES_PER_BLOCK) {
+                                        break;
+                                    }
+
+                                    sharedRes[sIdx] = int2{ idx, _lvs_idx[st - intSize] };
+
+                                }
+                                st = node.escape;
+                            }
+                            else {
+                                st = node.lc;
                             }
                         }
                         else {
-                            _cpRes[count + idx * MAX_CD_NUM_PER_VERT] = temp_idx;
-                            count++;
+                            st = node.escape;
                         }
+                    }
+                }
+                // Flush whatever we have
+                __syncthreads();
+                int totalRes = min(sharedCounter, MAX_RES_PER_BLOCK);
 
-                        st = node.escape;
-                    }
-                    else {
-                        st = node.lc;
+                if (threadIdx.x == 0) {
+                    sharedGlobalIdx = atomicAdd(resCounter, totalRes);
+                }
+
+                __syncthreads();
+
+                // Make sure we dont write out of bounds
+                const int globalIdx = sharedGlobalIdx;
+
+                if (globalIdx >= maxRes || !totalRes) return;	// Out of memory for results.
+                if (threadIdx.x == 0) sharedCounter = 0;
+                //
+                //// If we got here with a half full buffer, we are done.
+                bool done = totalRes < MAX_RES_PER_BLOCK;
+                // If we are about to run out of memory, we are done.
+                if (totalRes > maxRes - globalIdx) {
+                    totalRes = maxRes - globalIdx;
+                    done = true;
+                }
+
+                // Copy full blocks
+                int fullBlocks = (totalRes - 1) / (int)blockDim.x;
+                for (int i = 0; i < fullBlocks; i++) {
+                    int offset = i * blockDim.x + threadIdx.x;
+                    res[globalIdx + offset] = sharedRes[offset];
+                }
+
+                // Copy the rest
+                int offset = fullBlocks * blockDim.x + threadIdx.x;
+                if (offset < totalRes) res[globalIdx + offset] = sharedRes[offset];
+
+                // Break if every thread is done.
+                if (done) break;
+            }
+        }
+
+        __global__ void StacklessCDSharedOther(uint Size, const aabb* _box, const int* sortedIdx,
+            const int intSize, const int* _lvs_idx,
+            const stacklessnode* _nodes,
+            int* resCounter, int2* res, const int maxRes) {
+            int tid = blockIdx.x * blockDim.x + threadIdx.x;
+            bool active = tid < Size;
+            int idx;
+            aabb bv;
+            if (active) {
+                idx = sortedIdx[tid];
+                bv = _box[idx];
+            }
+
+            __shared__ int2 sharedRes[MAX_RES_PER_BLOCK];
+            __shared__ int sharedCounter;		// How many results are cached in shared memory
+            __shared__ int sharedGlobalIdx;		// Where to write in global memory
+            if (threadIdx.x == 0)
+                sharedCounter = 0;
+
+            int st = 0;
+            stacklessnode node;
+            while (true) {
+                __syncthreads();
+                if (active) {
+                    while (st != -1)
+                    {
+                        node = _nodes[st];
+                        if (node.bound.intersects(bv)) {
+                            if (node.lc == -1) {
+                                int sIdx = atomicAdd(&sharedCounter, 1);
+                                if (sIdx >= MAX_RES_PER_BLOCK) {
+                                    break;
+                                }
+
+                                sharedRes[sIdx] = int2{ idx, _lvs_idx[st - intSize] };
+                                st = node.escape;
+                            }
+                            else {
+                                st = node.lc;
+                            }
+                        }
+                        else {
+                            st = node.escape;
+                        }
                     }
                 }
-                else {
-                    st = node.escape;
+                // Flush whatever we have
+                __syncthreads();
+                int totalRes = min(sharedCounter, MAX_RES_PER_BLOCK);
+
+                if (threadIdx.x == 0) {
+                    sharedGlobalIdx = atomicAdd(resCounter, totalRes);
                 }
-            } while (st != -1);
-            _cpNum[idx] = count;
+
+                __syncthreads();
+
+                // Make sure we dont write out of bounds
+                const int globalIdx = sharedGlobalIdx;
+
+                if (globalIdx >= maxRes || !totalRes) return;	// Out of memory for results.
+                if (threadIdx.x == 0) sharedCounter = 0;
+                //
+                //// If we got here with a half full buffer, we are done.
+                bool done = totalRes < MAX_RES_PER_BLOCK;
+                // If we are about to run out of memory, we are done.
+                if (totalRes > maxRes - globalIdx) {
+                    totalRes = maxRes - globalIdx;
+                    done = true;
+                }
+
+                // Copy full blocks
+                int fullBlocks = (totalRes - 1) / (int)blockDim.x;
+                for (int i = 0; i < fullBlocks; i++) {
+                    int offset = i * blockDim.x + threadIdx.x;
+                    res[globalIdx + offset] = sharedRes[offset];
+                }
+
+                // Copy the rest
+                int offset = fullBlocks * blockDim.x + threadIdx.x;
+                if (offset < totalRes) res[globalIdx + offset] = sharedRes[offset];
+
+                // Break if every thread is done.
+                if (done) break;
+            }
         }
     }
 
@@ -752,7 +886,13 @@ namespace culbvh {
         impl->d_int_mark.resize(numInternalNodes);
         impl->d_int_aabb.resize(numInternalNodes);
 
-        impl->d_quantNode.resize(numNodes);
+        if (type == 0) {
+            impl->d_quantNode.resize(numNodes);
+        }
+        else {
+			impl->d_nodes.resize(numNodes);
+        }
+        
 
 		// Initialize flags to 0
 		thrust::fill(impl->d_flags.begin(), impl->d_flags.end(), 0);
@@ -829,13 +969,24 @@ namespace culbvh {
 			thrust::raw_pointer_cast(impl->d_ext_lca.data()), 
             thrust::raw_pointer_cast(impl->d_ext_par.data()));
         
-        LBVHKernels::reorderQuantilizedNode << <gridDim, blockDim >> > (
-            numInternalNodes, thrust::raw_pointer_cast(impl->d_tkMap.data()),
-            thrust::raw_pointer_cast(impl->d_ext_lca.data()), thrust::raw_pointer_cast(impl->d_ext_aabb.data()),
-            thrust::raw_pointer_cast(impl->d_int_lc.data()), thrust::raw_pointer_cast(impl->d_int_mark.data()),
-            thrust::raw_pointer_cast(impl->d_int_range_y.data()), thrust::raw_pointer_cast(impl->d_int_aabb.data()),
-			thrust::raw_pointer_cast(impl->d_scene_box.data()),
-            thrust::raw_pointer_cast(impl->d_quantNode.data()));
+        if (type == 0) {
+            LBVHKernels::reorderQuantilizedNode << <gridDim, blockDim >> > (
+                numInternalNodes, thrust::raw_pointer_cast(impl->d_tkMap.data()),
+                thrust::raw_pointer_cast(impl->d_ext_lca.data()), thrust::raw_pointer_cast(impl->d_ext_aabb.data()),
+                thrust::raw_pointer_cast(impl->d_int_lc.data()), thrust::raw_pointer_cast(impl->d_int_mark.data()),
+                thrust::raw_pointer_cast(impl->d_int_range_y.data()), thrust::raw_pointer_cast(impl->d_int_aabb.data()),
+                thrust::raw_pointer_cast(impl->d_scene_box.data()),
+                thrust::raw_pointer_cast(impl->d_quantNode.data()));
+        }
+        else {
+			LBVHKernels::reorderNode << <gridDim, blockDim >> > (
+				numInternalNodes, thrust::raw_pointer_cast(impl->d_tkMap.data()),
+				thrust::raw_pointer_cast(impl->d_ext_lca.data()), thrust::raw_pointer_cast(impl->d_ext_aabb.data()),
+				thrust::raw_pointer_cast(impl->d_int_lc.data()), thrust::raw_pointer_cast(impl->d_int_mark.data()),
+				thrust::raw_pointer_cast(impl->d_int_range_y.data()), thrust::raw_pointer_cast(impl->d_int_aabb.data()),
+				thrust::raw_pointer_cast(impl->d_nodes.data()));
+        }
+        
     }
 
     size_t LBVHStackless::query() {
@@ -848,12 +999,22 @@ namespace culbvh {
         checkCudaErrors(cudaGetLastError());
         // Query the LBVH
         const int numQuery = numObjs;
-		LBVHKernels::quantilizedStacklessCDSharedSelf << <(numQuery + 255) / 256, 256 >> > (
-			numQuery, thrust::raw_pointer_cast(impl->d_objs),
-			numObjs-1, thrust::raw_pointer_cast(impl->d_ext_idx.data()),
-            thrust::raw_pointer_cast(impl->d_scene_box.data()),
-			thrust::raw_pointer_cast(impl->d_quantNode.data()),
-            d_cpNum, d_cpRes, max_cpNum);
+
+        if (type == 0) {
+            LBVHKernels::quantilizedStacklessCDSharedSelf << <(numQuery + 255) / 256, 256 >> > (
+                numQuery, thrust::raw_pointer_cast(impl->d_objs),
+                numObjs - 1, thrust::raw_pointer_cast(impl->d_ext_idx.data()),
+                thrust::raw_pointer_cast(impl->d_scene_box.data()),
+                thrust::raw_pointer_cast(impl->d_quantNode.data()),
+                d_cpNum, d_cpRes, max_cpNum);
+        }
+        else {
+			LBVHKernels::StacklessCDSharedSelf << <(numQuery + 255) / 256, 256 >> > (
+                numQuery, thrust::raw_pointer_cast(impl->d_objs),
+                numObjs - 1, thrust::raw_pointer_cast(impl->d_ext_idx.data()),
+                thrust::raw_pointer_cast(impl->d_nodes.data()),
+                d_cpNum, d_cpRes, max_cpNum);
+        }
         
         
 		cudaMemcpy((void*)&h_cpNum, d_cpNum, sizeof(int), cudaMemcpyDeviceToHost);
@@ -900,17 +1061,25 @@ namespace culbvh {
             d_queryMtCode
             );
 
-        thrust::sequence(thrust::device, d_queryMtCode, d_queryMtCode+ numQuery);
+        thrust::sequence(thrust::device, d_querySortedId, d_querySortedId + numQuery);
+
         thrust::sort_by_key(thrust::device, d_queryMtCode, d_queryMtCode + numQuery, d_querySortedId);
 
-        LBVHKernels::quantilizedStacklessCDShared << <(numQuery + 255) / 256, 256 >> > (
-            numQuery, devicePtr, d_querySortedId,
-            numObjs - 1, thrust::raw_pointer_cast(impl->d_ext_idx.data()),
-            thrust::raw_pointer_cast(impl->d_scene_box.data()),
-            thrust::raw_pointer_cast(impl->d_quantNode.data()),
-            d_cpNum, d_cpRes, max_cpNum);
-
-
+        if (type == 0) {     
+            LBVHKernels::quantilizedStacklessCDSharedOther << <(numQuery + 255) / 256, 256 >> > (
+                numQuery, devicePtr, d_querySortedId,
+                numObjs - 1, thrust::raw_pointer_cast(impl->d_ext_idx.data()),
+                thrust::raw_pointer_cast(impl->d_scene_box.data()),
+                thrust::raw_pointer_cast(impl->d_quantNode.data()),
+                d_cpNum, d_cpRes, max_cpNum);
+        }
+        else {
+			LBVHKernels::StacklessCDSharedOther << <(numQuery + 255) / 256, 256 >> > (
+				numQuery, devicePtr, d_querySortedId,
+				numObjs - 1, thrust::raw_pointer_cast(impl->d_ext_idx.data()),
+				thrust::raw_pointer_cast(impl->d_nodes.data()),
+				d_cpNum, d_cpRes, max_cpNum);
+        }
         cudaMemcpy((void*)&h_cpNum, d_cpNum, sizeof(int), cudaMemcpyDeviceToHost);
         checkCudaErrors(cudaGetLastError());
 
@@ -956,8 +1125,8 @@ namespace culbvh {
         // Query BVH
         printf("Querying LBVH...\n");
         cudaEventRecord(start);
-        int numCols = bvh.query();
-        //int numCols = bvh.queryOther(thrust::raw_pointer_cast(d_points.data()), N);
+        //int numCols = bvh.query();
+        int numCols = bvh.queryOther(thrust::raw_pointer_cast(d_points.data()), N);
         cudaEventRecord(stop);
         cudaEventSynchronize(stop);
         cudaEventElapsedTime(&milliseconds, start, stop);

@@ -31,6 +31,9 @@ namespace culbvh {
         size_t query();
 
 		size_t queryOther(aabb* devicePtr, size_t size);
+
+        int type = 1; // 0: quant node 16 bytes,   1: 32 bytes 
+
     private:
         struct thrustImpl;
         std::unique_ptr<thrustImpl> impl;
@@ -54,6 +57,8 @@ namespace culbvh {
         aabb* d_querySceneBox;
 		int* d_querySortedId;
         int queryNum = 0;
+
+		
 
     };
 
