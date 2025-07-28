@@ -8,7 +8,7 @@
 
 namespace culbvh {
     using aabb = Bound<float>;
-    struct __align__(32) stacklessnode {
+    struct __align__(16) stacklessnode {
         int lc;
         int escape;
         aabb bound;

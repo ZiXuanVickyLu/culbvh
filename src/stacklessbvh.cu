@@ -666,7 +666,18 @@ namespace culbvh {
                 if (active) {
                     while (st != -1)
                     {
-                        node = _nodes[st];
+                        asm volatile(
+                            "{\n\t"
+                            "ld.global.v4.u32 {%0, %1, %2, %3}, [%8];\n\t"
+                            "ld.global.v4.u32 {%4, %5, %6, %7}, [%8+16];\n\t"
+                            "}\n\t"
+                            :"=r"(node.lc), "=r"(node.escape),
+                            "=r"(reinterpret_cast<int&>(node.bound.min.x)), "=r"(reinterpret_cast<int&>(node.bound.min.y)),
+                            "=r"(reinterpret_cast<int&>(node.bound.min.z)), "=r"(reinterpret_cast<int&>(node.bound.max.x)),
+                            "=r"(reinterpret_cast<int&>(node.bound.max.y)), "=r"(reinterpret_cast<int&>(node.bound.max.z))
+                            : "l"(&_nodes[st])  // Load bvhNodeV1 from global memory
+                            );
+                        //node = _nodes[st];
                         if (node.bound.intersects(bv)) {
                             if (node.lc == -1) {
                                 if (tid < st - intSize) {
@@ -755,7 +766,18 @@ namespace culbvh {
                 if (active) {
                     while (st != -1)
                     {
-                        node = _nodes[st];
+                        asm volatile(
+                            "{\n\t"
+                            "ld.global.v4.u32 {%0, %1, %2, %3}, [%8];\n\t"
+                            "ld.global.v4.u32 {%4, %5, %6, %7}, [%8+16];\n\t"
+                            "}\n\t"
+                            :"=r"(node.lc), "=r"(node.escape),
+                            "=r"(reinterpret_cast<int&>(node.bound.min.x)), "=r"(reinterpret_cast<int&>(node.bound.min.y)),
+                            "=r"(reinterpret_cast<int&>(node.bound.min.z)), "=r"(reinterpret_cast<int&>(node.bound.max.x)),
+                            "=r"(reinterpret_cast<int&>(node.bound.max.y)), "=r"(reinterpret_cast<int&>(node.bound.max.z))
+                            : "l"(&_nodes[st])  // Load bvhNodeV1 from global memory
+                            );
+                        //node = _nodes[st];
                         if (node.bound.intersects(bv)) {
                             if (node.lc == -1) {
                                 int sIdx = atomicAdd(&sharedCounter, 1);
