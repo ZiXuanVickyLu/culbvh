@@ -25,6 +25,7 @@ namespace culbvh {
     int const K_REDUCTION_MODULO = K_REDUCTION_NUM - 1;
 
     int const aabbBits = 15;
+	int const aabbRes = (1 << aabbBits) - 2;
     int const indexBits = 64 - 3 * aabbBits;
     int const offset3 = aabbBits * 3;
     int const offset2 = aabbBits * 2;
@@ -421,9 +422,6 @@ namespace culbvh {
             }
 
             _nodes[newId] = internalNode;
-            if (idx == intSize - 1) {
-                _scene_box[0].max = delta;
-            }
         }
         __device__ __host__ __forceinline__ bool overlapsLonglong2int(const ulonglong2& a, const intAABB& b) {
             int temp_a, temp_b;
@@ -462,7 +460,8 @@ namespace culbvh {
             int tid = blockIdx.x * blockDim.x + threadIdx.x;
             bool active = tid < Size;
             auto origin = scene[0].min;
-            auto delta = scene[0].max;
+            auto delta = scene[0].max - origin;
+            delta /= aabbRes;
             int idx;
             intAABB bv;
             if (active) {
@@ -556,7 +555,9 @@ namespace culbvh {
             int tid = blockIdx.x * blockDim.x + threadIdx.x;
             bool active = tid < Size;
             auto origin = scene[0].min;
-            auto delta = scene[0].max;
+            auto delta = scene[0].max - origin;
+
+            delta /= aabbRes;
             int idx;
             intAABB bv;
             if (active) {

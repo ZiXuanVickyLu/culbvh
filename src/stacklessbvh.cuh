@@ -32,7 +32,7 @@ namespace culbvh {
 
 		size_t queryOther(aabb* devicePtr, size_t size);
 
-        int type = 1; // 0: quant node 16 bytes,   1: 32 bytes 
+        int type = 0; // 0: quant node 16 bytes,   1: 32 bytes 
 
     private:
         struct thrustImpl;
