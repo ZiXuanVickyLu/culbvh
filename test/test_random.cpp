@@ -1,7 +1,8 @@
 #include <iostream>
 #include "culbvh.cuh"
 #include "stacklessbvh.cuh"
-void main(int arg, char** args) {
+int main(int arg, char** args) {
 	//culbvh::testLBVH();
 	culbvh::testStacklessLBVH();
+	return 0;
 }

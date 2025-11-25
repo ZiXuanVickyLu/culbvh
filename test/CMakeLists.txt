@@ -2,6 +2,7 @@
 set_source_files_properties(
     ${CMAKE_CURRENT_SOURCE_DIR}/test_random.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/test_simulation_dataset.cu
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_simulation_dataset_stackless.cu
     PROPERTIES
     LANGUAGE CUDA
 )
@@ -11,6 +12,9 @@ target_link_libraries(lbvh_test PRIVATE culbvh)
 
 add_executable(lbvh_test_simulation_dataset test_simulation_dataset.cu)
 target_link_libraries(lbvh_test_simulation_dataset PRIVATE culbvh culbvh_tools)
+
+add_executable(stackless_test_simulation_dataset test_simulation_dataset_stackless.cu)
+target_link_libraries(stackless_test_simulation_dataset PRIVATE culbvh culbvh_tools)
 
 # Set CUDA properties for executables
 set_target_properties(lbvh_test PROPERTIES

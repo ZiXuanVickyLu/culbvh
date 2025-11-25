@@ -3,6 +3,7 @@
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
 
+#ifndef CCCL_VERSION_GREATER_EQUAL_13_0
 #include <thrust/host_vector.h>
 #include <thrust/device_vector.h>
 #include <thrust/swap.h>
@@ -13,6 +14,18 @@
 #include <thrust/fill.h>
 #include <thrust/reduce.h>
 #include <thrust/execution_policy.h>
+#else
+#include <cccl/thrust/host_vector.h>
+#include <cccl/thrust/device_vector.h>
+#include <cccl/thrust/swap.h>
+#include <cccl/thrust/host_vector.h>
+#include <cccl/thrust/device_vector.h>
+#include <cccl/thrust/functional.h>
+#include <cccl/thrust/sort.h>
+#include <cccl/thrust/fill.h>
+#include <cccl/thrust/reduce.h>
+#include <cccl/thrust/execution_policy.h>
+#endif
 
 #include <unordered_set>
 #include <tbb/parallel_for.h>
@@ -22,7 +35,7 @@
 
 namespace culbvh {
 
-	 template<typename T>
+	template<typename T>
     struct culbvh_aabb_valid_predicate {
         CUDA_INLINE_CALLABLE bool operator()(const Bound<T>& aabb) const {
             return aabb.min.x <= aabb.max.x && 

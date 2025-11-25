@@ -3,6 +3,7 @@
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
 
+#ifndef CCCL_VERSION_GREATER_EQUAL_13_0
 #include <thrust/host_vector.h>
 #include <thrust/device_vector.h>
 #include <thrust/swap.h>
@@ -14,9 +15,54 @@
 #include <thrust/fill.h>
 #include <thrust/reduce.h>
 #include <thrust/execution_policy.h>
+#else
+#include <cccl/thrust/host_vector.h>
+#include <cccl/thrust/device_vector.h>
+#include <cccl/thrust/swap.h>
+#include <cccl/thrust/sequence.h>
+#include <cccl/thrust/host_vector.h>
+#include <cccl/thrust/device_vector.h>
+#include <cccl/thrust/functional.h>
+#include <cccl/thrust/sort.h>
+#include <cccl/thrust/fill.h>
+#include <cccl/thrust/reduce.h>
+#include <cccl/thrust/execution_policy.h>
+#endif
+
+#include <tbb/parallel_for.h>
+#include <atomic>
+#include <tbb/concurrent_unordered_set.h>
+#include <chrono>
+
 
 #define MAX_CD_NUM_PER_VERT 64
 namespace culbvh {
+    template<typename T>
+    struct culbvh_aabb_valid_predicate {
+        CUDA_INLINE_CALLABLE bool operator()(const Bound<T>& aabb) const {
+            return aabb.min.x <= aabb.max.x && 
+                   aabb.min.y <= aabb.max.y && 
+                   aabb.min.z <= aabb.max.z &&
+                   aabb.min.x != std::numeric_limits<T>::max() &&
+                   aabb.max.x != std::numeric_limits<T>::lowest();
+        }
+    };
+
+	// Custom hash function for int2
+	struct Int2Hash {
+		std::size_t operator()(const int2& k) const {
+			// Simple hash function combining x and y
+			return std::hash<int>()(k.x) ^ (std::hash<int>()(k.y) << 1);
+		}
+	};
+
+	// Custom equality function for int2
+	struct Int2Equal {
+		bool operator()(const int2& lhs, const int2& rhs) const {
+			return lhs.x == rhs.x && lhs.y == rhs.y;
+		}
+	};
+
     using  uint = uint32_t;
 	using ullint = unsigned long long int;
     int const K_THREADS = 256;
@@ -1059,6 +1105,7 @@ namespace culbvh {
 			cudaMalloc((void**)&d_querySceneBox, sizeof(aabb));
 			cudaMalloc((void**)&d_queryMtCode, sizeof(uint32_t) * size);
 			cudaMalloc((void**)&d_querySortedId, sizeof(int) * size);
+            queryNum = size;
         }else if (queryNum<size){
 			cudaFree(d_querySceneBox);
 			cudaFree(d_queryMtCode);
@@ -1110,6 +1157,116 @@ namespace culbvh {
 
         return h_cpNum;
     }
+
+    bool LBVHStackless::query_compare_ground_truth() const {
+		// Create device pointer from raw pointer
+		thrust::device_ptr<int2> d_results_ptr(this->get_query_results());
+		// Copy to host
+		thrust::host_vector<int2> h_res(d_results_ptr, d_results_ptr + this->get_query_results_size());
+		
+		// Create a set to store unique collision pairs
+		tbb::concurrent_unordered_set<int2, Int2Hash, Int2Equal> gpu_results;
+		for (const auto& pair : h_res) {
+			// Ensure pairs are ordered (i < j) to match GPU query behavior
+			int2 ordered_pair = pair;
+			if (ordered_pair.x > ordered_pair.y) {
+				std::swap(ordered_pair.x, ordered_pair.y);
+			}
+			gpu_results.insert(ordered_pair);
+		}
+
+		thrust::host_vector<aabb> h_aabbs(impl->d_objs, impl->d_objs + numObjs);
+		tbb::concurrent_unordered_set<int2, Int2Hash, Int2Equal> cpu_results;
+		
+		// Use TBB parallel_for for brute force check
+		// Only check pairs where i < j to match GPU query behavior
+		tbb::parallel_for(tbb::blocked_range<size_t>(0, numObjs),
+			[&](const tbb::blocked_range<size_t>& range) {
+				for (size_t i = range.begin(); i < range.end(); i++) {
+					for (size_t j = i + 1; j < numObjs; j++) {
+						if (h_aabbs[i].intersects(h_aabbs[j])) {
+							cpu_results.insert(make_int2(i, j));
+						}
+					}
+				}
+			}
+		);
+
+		// if (cpu_results.size() != gpu_results.size()) {
+		// 	printf("Error: Number of collision pairs mismatch. CPU: %zu, GPU: %zu\n", 
+		// 		   cpu_results.size(), gpu_results.size());
+		// 	return false;
+		// }
+
+		for (const auto& pair : cpu_results) {
+			if (gpu_results.find(pair) == gpu_results.end()) {
+				printf("Error: CPU result (%d, %d) not found in GPU results\n", pair.x, pair.y);
+				return false;
+			}
+		}
+		for (const auto& pair : gpu_results) {
+			if (cpu_results.find(pair) == cpu_results.end()) {
+				printf("Error: GPU result (%d, %d) not found in CPU results\n", pair.x, pair.y);
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+
+    bool LBVHStackless::query_compare_ground_truth_other( aabb* otherPtr, size_t query_size) const {
+		// Create device pointer from raw pointer
+        size_t resSize = this->get_query_results_size();
+		thrust::device_ptr<int2> d_results_ptr(this->get_query_results());
+		// Copy to host
+		thrust::host_vector<int2> h_res(d_results_ptr, d_results_ptr + resSize);
+		thrust::device_ptr<aabb> d_other_aabbs_ptr(otherPtr);
+		tbb::concurrent_unordered_set<int2, Int2Hash, Int2Equal> gpu_results;
+		for (const auto& pair : h_res) {
+			gpu_results.insert(pair);  // No need to order pairs for cross-BVH comparison
+		}
+		thrust::host_vector<aabb> h_aabbs1(impl->d_objs, impl->d_objs + numObjs);
+		thrust::host_vector<aabb> h_aabbs2(d_other_aabbs_ptr, d_other_aabbs_ptr + query_size);
+		
+		tbb::concurrent_unordered_set<int2, Int2Hash, Int2Equal> cpu_results;
+
+		tbb::parallel_for(tbb::blocked_range<size_t>(0, numObjs),
+			[&](const tbb::blocked_range<size_t>& range) {
+				for (size_t i = range.begin(); i < range.end(); i++) {
+					for (size_t j = 0; j < query_size; j++) {
+						if (h_aabbs1[i].intersects(h_aabbs2[j])) {
+							cpu_results.insert(make_int2(i, j));
+						}
+					}
+				}
+			}
+		);
+		// if (cpu_results.size() != resSize) {
+		// 	printf("Error: Number of collision pairs mismatch. CPU: %zu, GPU: %zu\n", 
+		// 		   cpu_results.size(), resSize);
+		// 	return false;
+		// }
+
+		for (const auto& pair : cpu_results) {
+			if (gpu_results.find(pair) == gpu_results.end()) {
+				printf("Error: CPU result (%d, %d) not found in GPU results\n", pair.x, pair.y);
+				return false;
+			}
+		}
+
+		for (const auto& pair : gpu_results) {
+			if (cpu_results.find(pair) == cpu_results.end()) {
+				printf("Error: GPU result (%d, %d) not found in CPU results\n", pair.x, pair.y);
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+
+
 
     void testStacklessLBVH() {
         const int N = 100000;

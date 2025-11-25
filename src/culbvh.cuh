@@ -7,8 +7,13 @@
 #include "typedef.h"
 #include "vector_type_t.h"
 #include "bound.h"
+#ifndef CCCL_VERSION_GREATER_EQUAL_13_0
 #include "thrust/device_vector.h"
 #include "thrust/device_ptr.h"
+#else
+#include <cccl/thrust/device_vector.h>
+#include <cccl/thrust/device_ptr.h>
+#endif
 
 namespace culbvh {
 	/// <summary>

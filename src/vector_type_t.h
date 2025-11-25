@@ -8,7 +8,11 @@
 
 #include <cuda_runtime.h>
 #include "typedef.h"
+#ifndef CCCL_VERSION_GREATER_EQUAL_13_0
 #include <thrust/extrema.h>
+#else
+#include <cccl/thrust/extrema.h>
+#endif
 #include <vector_types.h>
 #include <vector_functions.hpp>
 #include <vector_functions.h>

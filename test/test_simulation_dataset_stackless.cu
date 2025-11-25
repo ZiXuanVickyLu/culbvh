@@ -37,7 +37,7 @@ namespace fs = std::filesystem;
 #include <cccl/thrust/host_vector.h>
 #endif
 
-#include "culbvh.cuh"
+#include "stacklessbvh.cuh"
 #include "bound.h"
 #include "typedef.h"
 using namespace culbvh;
@@ -188,51 +188,44 @@ TestResult test_frame(const std::string& dataset_name, int frame_num) {
         cudaEventCreate(&start);
         cudaEventCreate(&stop);
         
-        std::cout << "  Testing culbvh..." << std::endl;
+        std::cout << "  Testing stacklessbvh without quantization..." << std::endl;
         
         // Build collider BVH
         cudaEventRecord(start);
-        culbvh::LBVH collider_bvh;
+        culbvh::LBVHStackless collider_bvh;
+        collider_bvh.type = 1;
         collider_bvh.compute(thrust::raw_pointer_cast(d_collider_aabbs.data()), collider_aabbs.size());
         cudaEventRecord(stop);
         cudaEventSynchronize(stop);
         cudaEventElapsedTime(&result.collider_build_time, start, stop);
-        collider_bvh.bvhSelfCheck();
         // Build mesh BVH
         cudaEventRecord(start);
-        culbvh::LBVH mesh_bvh;
+        culbvh::LBVHStackless mesh_bvh;
+        mesh_bvh.type = 1;
         mesh_bvh.compute(thrust::raw_pointer_cast(d_mesh_aabbs.data()), mesh_aabbs.size());
         cudaEventRecord(stop);
         cudaEventSynchronize(stop);
         cudaEventElapsedTime(&result.mesh_build_time, start, stop);
-        mesh_bvh.bvhSelfCheck();
+
         // Query between collider and mesh
-        size_t max_results = mesh_aabbs.size() * 128;  // Maximum possible collisions
-        thrust::device_vector<int2> d_results(max_results);
-        
         cudaEventRecord(start);
-        result.query_contacts = mesh_bvh.query(thrust::raw_pointer_cast(d_results.data()), max_results, &collider_bvh);
+        result.query_contacts = mesh_bvh.queryOther(thrust::raw_pointer_cast(d_collider_aabbs.data()), collider_aabbs.size());
         cudaEventRecord(stop);
         cudaEventSynchronize(stop);
         cudaEventElapsedTime(&result.query_time, start, stop);
         
         // Compare with ground truth for collider-mesh query
-        result.query_matches_ground_truth = mesh_bvh.query_compare_ground_truth(
-            thrust::raw_pointer_cast(d_results.data()), result.query_contacts, &collider_bvh);
+        result.query_matches_ground_truth = mesh_bvh.query_compare_ground_truth_other(thrust::raw_pointer_cast(d_collider_aabbs.data()), collider_aabbs.size());
         
         // Self-query for mesh BVH
-        auto self_max_results = mesh_bvh.size() * 128;
-        thrust::device_vector<int2> d_self_results(self_max_results);
-        
         cudaEventRecord(start);
-        result.self_query_contacts = mesh_bvh.query(thrust::raw_pointer_cast(d_self_results.data()), self_max_results);
+        result.self_query_contacts = mesh_bvh.query();
         cudaEventRecord(stop);
         cudaEventSynchronize(stop);
         cudaEventElapsedTime(&result.self_query_time, start, stop);
         
         // Compare with ground truth for mesh self-query
-        result.self_query_matches_ground_truth = mesh_bvh.query_compare_ground_truth(
-            thrust::raw_pointer_cast(d_self_results.data()), result.self_query_contacts);
+        result.self_query_matches_ground_truth = mesh_bvh.query_compare_ground_truth();
         
         cudaEventDestroy(start);
         cudaEventDestroy(stop);

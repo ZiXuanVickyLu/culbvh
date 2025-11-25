@@ -1,8 +1,13 @@
 #pragma once
 // Xiao Cheng, 2025
 #include "bound.h"
+#ifndef CCCL_VERSION_GREATER_EQUAL_13_0
 #include "thrust/device_vector.h"
 #include "thrust/device_ptr.h"
+#else
+#include <cccl/thrust/device_vector.h>
+#include <cccl/thrust/device_ptr.h>
+#endif
 #include <memory>
 #include "typedef.h"
 
@@ -34,6 +39,14 @@ namespace culbvh {
 
         int type = 0; // 0: quant node 16 bytes,   1: 32 bytes 
 
+        bool query_compare_ground_truth() const;
+
+        bool query_compare_ground_truth_other( aabb* otherPtr, size_t query_size) const;
+
+        int2* get_query_results() const { return d_cpRes; }
+
+        int get_query_results_size() const { return h_cpNum; }
+      
     private:
         struct thrustImpl;
         std::unique_ptr<thrustImpl> impl;
@@ -57,8 +70,6 @@ namespace culbvh {
         aabb* d_querySceneBox;
 		int* d_querySortedId;
         int queryNum = 0;
-
-		
 
     };
 
