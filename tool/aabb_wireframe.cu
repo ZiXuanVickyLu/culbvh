@@ -7,6 +7,7 @@
 #include <thrust/copy.h>
 #include <cuda_runtime.h>
 #include "../src/typedef.h"
+#include "../src/stacklessbvh.cuh"
 
 namespace culbvh {
 
@@ -162,6 +163,57 @@ namespace culbvh {
         merged_bounds.absorb(nodes[idx].bounds[1]);
         aabbs[idx] = merged_bounds;
        // printf("merged_bounds: %f,%f,%f,%f,%f,%f\n", merged_bounds.min.x, merged_bounds.min.y, merged_bounds.min.z, merged_bounds.max.x, merged_bounds.max.y, merged_bounds.max.z);
+    }
+
+    template<typename T>
+    __global__ void create_stackless_bounds_kernel(
+        const stacklessnode* nodes,
+        Bound<T>* aabbs,
+        int num_nodes
+    ) {
+        int idx = blockIdx.x * blockDim.x + threadIdx.x;
+        if (idx >= num_nodes) return;
+        // Stackless nodes have a single bound field
+        aabbs[idx] = nodes[idx].bound;
+    }
+
+    template<typename T>
+    void AABBWireFrame<T>::build(const LBVHStackless* bvh) {
+        if (!bvh->is_valid()) return;
+        
+        // In stackless BVH, internal_nodes() returns ALL nodes (internal + leaf)
+        // Total nodes = numObjs * 2 - 1 (numObjs-1 internal + numObjs leaf)
+        size_t num_nodes = bvh->internal_nodes().size();
+        size_t num_objects = bvh->size();
+        
+        printf("total_nodes: %zu\n", num_nodes);
+        printf("num_objects: %zu\n", num_objects);
+        
+        if (num_nodes == 0) {
+            printf("Error: No nodes in BVH. BVH may not be built correctly.\n");
+            return;
+        }
+        
+        // Create device vector for all node AABBs
+        // The nodes array already contains all nodes with their bounds
+        thrust::device_vector<aabb> d_aabb(num_nodes);
+        
+        // Create a kernel to copy stackless node bounds
+        auto d_nodes = bvh->internal_nodes();
+        auto d_nodes_ptr = thrust::raw_pointer_cast(d_nodes.data());
+        auto d_aabb_ptr = thrust::raw_pointer_cast(d_aabb.data());
+        
+        dim3 block_size(256);
+        dim3 grid_size((num_nodes + block_size.x - 1) / block_size.x);
+        
+        // Launch kernel to copy stackless node bounds
+        create_stackless_bounds_kernel<T><<<grid_size, block_size>>>(
+            d_nodes_ptr, d_aabb_ptr, num_nodes);
+        
+        cudaDeviceSynchronize();
+        
+        // Build the wireframe with all node AABBs
+        build(d_aabb);
     }
 
     template<typename T>

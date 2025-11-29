@@ -358,7 +358,7 @@ namespace culbvh {
 
         __global__ void reorderNode(int intSize, const int* _tkMap,int* _lvs_lca,aabb*  _lvs_box,
             int* _unorderedTks_lc, uint32_t* _unorderedTks_mark,  int* _unorderedTks_rangey, aabb* _unorderedTks_box,
-            stacklessnode* _nodes
+            int* _unorderedTks_rc, stacklessnode* _nodes
         ) {
             int idx = blockIdx.x * blockDim.x + threadIdx.x;
             if (idx >= intSize + 1) return;
@@ -386,9 +386,11 @@ namespace culbvh {
             int newId = _tkMap[idx];
             uint32_t mark = _unorderedTks_mark[idx];
 
-            internalNode.lc = mark & 1 ? _unorderedTks_lc[idx] + intSize: _tkMap[_unorderedTks_lc[idx]];
+            int leftChildIdx = mark & 1 ? _unorderedTks_lc[idx] + intSize: _tkMap[_unorderedTks_lc[idx]];
+            internalNode.lc = leftChildIdx;
             internalNode.bound = _unorderedTks_box[idx];
 
+            // Compute escape pointer: points to where to go after entire subtree
             int internalEscape = _lvs_lca[_unorderedTks_rangey[idx] + 1];
 
             if (internalEscape == -1) {
@@ -399,6 +401,30 @@ namespace culbvh {
                 internalEscape >>= 1;
                 internalNode.escape = internalEscape + (bLeaf ? intSize : 0);
             }
+            
+            // CRITICAL FIX: Set escape pointer for left child to point to right child
+            // When we escape from left subtree, we need to visit right child, not skip entire subtree
+            // Note: This overwrites the left child's escape pointer, but that's necessary for correct traversal
+            if (leftChildIdx != -1) {
+                // Compute right child index - check if right child exists
+                // The right child should always exist for internal nodes, but check to be safe
+                int rightChildIdx = -1;
+                if (mark & 2) {
+                    // Right child is a leaf (bit 2 set means right child is leaf)
+                    rightChildIdx = _unorderedTks_rc[idx] + intSize;
+                } else {
+                    // Right child is an internal node - need to check if it exists
+                    // For internal nodes, right child should always exist
+                    rightChildIdx = _tkMap[_unorderedTks_rc[idx]];
+                }
+                
+                // Set left child's escape to point to right child
+                // This ensures we visit right child after finishing left subtree
+                if (rightChildIdx != -1) {
+                    _nodes[leftChildIdx].escape = rightChildIdx;
+                }
+            }
+            
             _nodes[newId] = internalNode;
         }
 
@@ -594,7 +620,7 @@ namespace culbvh {
             }
         }
 
-		__global__ void quantilizedStacklessCDSharedOther(uint Size, const aabb* _box, const int* sortedIdx,
+        __global__ void quantilizedStacklessCDSharedOther(uint Size, const aabb* _box, const int* sortedIdx,
             const int intSize, const int* _lvs_idx,
             const aabb* scene, const ulonglong2* _nodes,
             int* resCounter, int2* res, const int maxRes) {
@@ -713,18 +739,18 @@ namespace culbvh {
                 if (active) {
                     while (st != -1)
                     {
-                        asm volatile(
-                            "{\n\t"
-                            "ld.global.v4.u32 {%0, %1, %2, %3}, [%8];\n\t"
-                            "ld.global.v4.u32 {%4, %5, %6, %7}, [%8+16];\n\t"
-                            "}\n\t"
-                            :"=r"(node.lc), "=r"(node.escape),
-                            "=r"(reinterpret_cast<int&>(node.bound.min.x)), "=r"(reinterpret_cast<int&>(node.bound.min.y)),
-                            "=r"(reinterpret_cast<int&>(node.bound.min.z)), "=r"(reinterpret_cast<int&>(node.bound.max.x)),
-                            "=r"(reinterpret_cast<int&>(node.bound.max.y)), "=r"(reinterpret_cast<int&>(node.bound.max.z))
-                            : "l"(&_nodes[st])  // Load bvhNodeV1 from global memory
-                            );
-                        //node = _nodes[st];
+                        // asm volatile(
+                        //     "{\n\t"
+                        //     "ld.global.v4.u32 {%0, %1, %2, %3}, [%8];\n\t"
+                        //     "ld.global.v4.u32 {%4, %5, %6, %7}, [%8+16];\n\t"
+                        //     "}\n\t"
+                        //     :"=r"(node.lc), "=r"(node.escape),
+                        //     "=r"(reinterpret_cast<int&>(node.bound.min.x)), "=r"(reinterpret_cast<int&>(node.bound.min.y)),
+                        //     "=r"(reinterpret_cast<int&>(node.bound.min.z)), "=r"(reinterpret_cast<int&>(node.bound.max.x)),
+                        //     "=r"(reinterpret_cast<int&>(node.bound.max.y)), "=r"(reinterpret_cast<int&>(node.bound.max.z))
+                        //     : "l"(&_nodes[st])  // Load bvhNodeV1 from global memory
+                        //     );
+                        node = _nodes[st];
                         if (node.bound.intersects(bv)) {
                             if (node.lc == -1) {
                                 if (tid < st - intSize) {
@@ -922,6 +948,14 @@ namespace culbvh {
     LBVHStackless::LBVHStackless() : impl(std::make_unique<thrustImpl>()) {}
     LBVHStackless::LBVHStackless::~LBVHStackless() = default;
 
+    const thrust::device_vector<stacklessnode>& LBVHStackless::internal_nodes() const {
+        return impl->d_nodes;
+    }
+
+    thrust::device_ptr<aabb> LBVHStackless::object_aabbs() const {
+        return impl->d_objs;
+    }
+
     void LBVHStackless::compute(aabb* devicePtr, size_t size){
         impl->d_objs = thrust::device_ptr<aabb>(devicePtr);
 		//this will make the BVH valid once compute is called
@@ -977,6 +1011,8 @@ namespace culbvh {
             devicePtr,
             thrust::raw_pointer_cast(impl->d_scene_box.data())
             );
+        cudaDeviceSynchronize();
+        rootBounds = impl->d_scene_box[0];
         
         LBVHKernels::calcMCsFromBox << <dim3(gridDim, 1, 1), dim3(blockDim, 1, 1) >> > (numObjs,
             devicePtr,
@@ -1053,6 +1089,7 @@ namespace culbvh {
 				thrust::raw_pointer_cast(impl->d_ext_lca.data()), thrust::raw_pointer_cast(impl->d_ext_aabb.data()),
 				thrust::raw_pointer_cast(impl->d_int_lc.data()), thrust::raw_pointer_cast(impl->d_int_mark.data()),
 				thrust::raw_pointer_cast(impl->d_int_range_y.data()), thrust::raw_pointer_cast(impl->d_int_aabb.data()),
+				thrust::raw_pointer_cast(impl->d_int_rc.data()),
 				thrust::raw_pointer_cast(impl->d_nodes.data()));
         }
         

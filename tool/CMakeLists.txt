@@ -5,6 +5,7 @@ set_source_files_properties(
     ${CMAKE_CURRENT_SOURCE_DIR}/segment_mesh_writer.cu
     ${CMAKE_CURRENT_SOURCE_DIR}/visualize_aabb.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/visualize_bvh.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/visualize_stackless_bvh.cpp
     PROPERTIES
     LANGUAGE CUDA
 )
@@ -39,6 +40,10 @@ add_executable(visualize_bvh
     ${CMAKE_CURRENT_SOURCE_DIR}/visualize_bvh.cpp
 )
 
+add_executable(visualize_stackless_bvh 
+    ${CMAKE_CURRENT_SOURCE_DIR}/visualize_stackless_bvh.cpp
+)
+
 set_target_properties(visualize_aabb PROPERTIES
     CUDA_SEPARABLE_COMPILATION ON
     CUDA_RESOLVE_DEVICE_SYMBOLS ON
@@ -49,6 +54,10 @@ set_target_properties(visualize_bvh PROPERTIES
     CUDA_RESOLVE_DEVICE_SYMBOLS ON
 )
 
+set_target_properties(visualize_stackless_bvh PROPERTIES
+    CUDA_SEPARABLE_COMPILATION ON
+    CUDA_RESOLVE_DEVICE_SYMBOLS ON
+)
 
 target_link_libraries(visualize_aabb PRIVATE 
     culbvh_tools
@@ -59,6 +68,12 @@ target_link_libraries(visualize_bvh PRIVATE
     culbvh_tools
     TBB::tbb
 )
+
+target_link_libraries(visualize_stackless_bvh PRIVATE 
+    culbvh_tools
+    TBB::tbb
+)
+
 target_include_directories(visualize_aabb PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/src
@@ -66,6 +81,12 @@ target_include_directories(visualize_aabb PRIVATE
 )
 
 target_include_directories(visualize_bvh PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/src
+    ${TBB_INCLUDE_DIRS}
+)
+
+target_include_directories(visualize_stackless_bvh PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/src
     ${TBB_INCLUDE_DIRS}

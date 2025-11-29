@@ -1,6 +1,7 @@
 # Set CUDA compilation for all source files
 set_source_files_properties(
     ${CMAKE_CURRENT_SOURCE_DIR}/culbvh.cu
+    ${CMAKE_CURRENT_SOURCE_DIR}/stacklessbvh.cu
     PROPERTIES
     LANGUAGE CUDA
 )

@@ -46,6 +46,12 @@ namespace culbvh {
         int2* get_query_results() const { return d_cpRes; }
 
         int get_query_results_size() const { return h_cpNum; }
+
+         // Get access to internal nodes for visualization
+         const thrust::device_vector<stacklessnode>& internal_nodes() const;
+        
+         // Get access to object AABBs for visualization
+         thrust::device_ptr<aabb> object_aabbs() const;
       
     private:
         struct thrustImpl;

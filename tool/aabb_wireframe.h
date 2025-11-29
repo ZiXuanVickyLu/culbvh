@@ -8,6 +8,7 @@
 #include "../src/typedef.h"
 #include "../src/bound.h"
 #include "../src/culbvh.cuh"
+#include "../src/stacklessbvh.cuh"
 #include <memory>
 #include <thrust/device_vector.h>
 #include <thrust/host_vector.h>
@@ -29,6 +30,7 @@ namespace culbvh {
         
         void build(const thrust::device_vector<aabb>& d_aabb);
         void build(const LBVH* bvh);
+        void build(const LBVHStackless* bvh);
         
         [[nodiscard]] bool is_valid() const { return m_is_valid;}
         [[nodiscard]] const AABBWireFrameConfig<T>& config() const { return m_config;}
