@@ -1,4 +1,15 @@
-## :tada:Update
+## :tada: Update (2025/11/29)
+I add up a new stackless bvh tutorial version (for bvh-aabb query) to demonstrate the parallel building-up on escape index and single-pass (still inspired by jerry) stackless tranverse algorithm, which is more human-readable. The tree structure is following original lbvh's morton code order (without query-based reordering, which should be faster). See stacklessbvh_lite. 
+
+Can pass all simulation dataset's GT.
+
+Next's optimization: 
+ - replace the thrust's parallel primitive by cub
+ - optimized the buffer managment (through benchmark, the buffer allocation is always the bottleneck)
+ - query-based reordering (make the 2n-1's node ordered as bfs-threaded order to allow maximized memory coalescing). See [Wang, 18](https://min-tang.github.io/home/BVH-OR/)
+ - bvh-bvh stackless algorithm (less universality but should be faster for narrow case (all the aabb list required prebuild bvh)).
+
+## :tada: Update
 A stackless bvh implemented by [@caixiao-0725](https://github.com/caixiao-0725), thanks xiao!
 
 
