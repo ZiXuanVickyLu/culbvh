@@ -2,10 +2,6 @@ cmake_minimum_required(VERSION 3.18)
 
 # Enable CUDA
 
-# 设置VCPKG_ROOT所在的位置
-set(VCPKG_ROOT "E:/github/vcpkg/scripts/buildsystems/vcpkg.cmake" CACHE PATH "")
-set(CMAKE_TOOLCHAIN_FILE ${VCPKG_ROOT})
-
 project(cuda_challenge LANGUAGES CXX CUDA)
 enable_language(CUDA)
 # Set C++ and CUDA standards

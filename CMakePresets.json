@@ -1,0 +1,128 @@
+{
+        "version": 3,
+        "configurePresets": [
+            {
+                "name": "win-relwithdebinfo",
+                "displayName": "Windows Release with Debug Info",
+                "description": "Windows MSVC release build with debugging information",
+                "generator": "Visual Studio 17 2022",
+                "architecture": "x64",
+                "binaryDir": "${sourceDir}/build/win-relwithdebinfo",
+                "condition": {
+                    "type": "equals",
+                    "lhs": "${hostSystemName}",
+                    "rhs": "Windows"
+                }
+            },
+            {
+                "name": "win-debug",
+                "displayName": "Windows Debug",
+                "description": "Windows MSVC debug build",
+                "generator": "Visual Studio 17 2022",
+                "architecture": "x64",
+                "binaryDir": "${sourceDir}/build/win-debug",
+                "condition": {
+                    "type": "equals",
+                    "lhs": "${hostSystemName}",
+                    "rhs": "Windows"
+                }
+            },
+            {
+                "name": "win-release",
+                "displayName": "Windows Release",
+                "description": "Windows MSVC release build with full optimization",
+                "generator": "Visual Studio 17 2022",
+                "architecture": "x64",
+                "binaryDir": "${sourceDir}/build/win-release",
+                "condition": {
+                    "type": "equals",
+                    "lhs": "${hostSystemName}",
+                    "rhs": "Windows"
+                }
+            },
+            {
+                "name": "relwithdebinfo",
+                "displayName": "Linux Release with debug info",
+                "description": "Release build with debugging information",
+                "generator": "Ninja",
+                "binaryDir": "${sourceDir}/build/relwithdebinfo",
+                "toolchainFile": "${sourceDir}/cmake/toolchain.cmake",
+                "cacheVariables": {
+                    "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+                    "CMAKE_CXX_FLAGS": "-O2 -g",
+                    "CLBCH_USE_DOUBLE": "OFF"
+                },
+                "condition": {
+                    "type": "notEquals",
+                    "lhs": "${hostSystemName}",
+                    "rhs": "Linux"
+                }
+            },
+            {
+                "name": "debug",
+                "displayName": "Linux Debug",
+                "description": "Debug build with full debugging information",
+                "generator": "Ninja",
+                "binaryDir": "${sourceDir}/build/debug",
+                "toolchainFile": "${sourceDir}/cmake/toolchain.cmake",
+                "cacheVariables": {
+                    "CMAKE_BUILD_TYPE": "Debug",
+                    "CMAKE_CXX_FLAGS": "-g -O0 -Wall -Wextra",
+                    "CLBCH_USE_DOUBLE": "OFF"
+                },
+                "condition": {
+                    "type": "notEquals",
+                    "lhs": "${hostSystemName}",
+                    "rhs": "Linux"
+                }
+            },
+            {
+                "name": "release",
+                "displayName": "Linux Release",
+                "description": "Release build with full optimization",
+                "generator": "Ninja",
+                "binaryDir": "${sourceDir}/build/release",
+                "toolchainFile": "${sourceDir}/cmake/toolchain.cmake",
+                "cacheVariables": {
+                    "CMAKE_BUILD_TYPE": "Release",
+                    "CMAKE_CXX_FLAGS": "-O3",
+                    "CLBCH_USE_DOUBLE": "OFF"
+                },
+                "condition": {
+                    "type": "notEquals",
+                    "lhs": "${hostSystemName}",
+                    "rhs": "Linux"
+                }
+            }
+        ],
+    
+        "buildPresets": [
+            {
+                "name": "win-relwithdebinfo",
+                "configurePreset": "win-relwithdebinfo",
+                "configuration": "RelWithDebInfo"
+            },
+            {
+                "name": "win-debug",
+                "configurePreset": "win-debug",
+                "configuration": "Debug"
+            },
+            {
+                "name": "win-release",
+                "configurePreset": "win-release",
+                "configuration": "Release"
+            },
+            {
+                "name": "relwithdebinfo",
+                "configurePreset": "relwithdebinfo"
+            },
+            {
+                "name": "debug",
+                "configurePreset": "debug"
+            },
+            {
+                "name": "release",
+                "configurePreset": "release"
+            }
+        ]
+    }
