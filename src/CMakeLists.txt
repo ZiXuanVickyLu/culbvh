@@ -2,11 +2,16 @@
 set_source_files_properties(
     ${CMAKE_CURRENT_SOURCE_DIR}/culbvh.cu
     ${CMAKE_CURRENT_SOURCE_DIR}/stacklessbvh.cu
+    ${CMAKE_CURRENT_SOURCE_DIR}/stacklessbvh_lite.cu
     PROPERTIES
     LANGUAGE CUDA
 )
 
-add_library(culbvh STATIC ${CMAKE_CURRENT_SOURCE_DIR}/culbvh.cu ${CMAKE_CURRENT_SOURCE_DIR}/stacklessbvh.cu)
+add_library(culbvh STATIC 
+${CMAKE_CURRENT_SOURCE_DIR}/culbvh.cu 
+${CMAKE_CURRENT_SOURCE_DIR}/stacklessbvh.cu
+${CMAKE_CURRENT_SOURCE_DIR}/stacklessbvh_lite.cu
+)
 
 # Set CUDA specific properties for the libraries
 set_target_properties(culbvh PROPERTIES
