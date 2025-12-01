@@ -29,7 +29,7 @@ int main() {
 				else { return -1; }
 			}
 			if (is_unique) {
-				fprintf(stderr, "--generate-code=arch=compute_%d%d,code=sm_%d%d;", prop.major, prop.minor, prop.major, prop.minor);
+				fprintf(stderr, "--generate-code=arch=compute_%d%d,code=sm_%d%d ", prop.major, prop.minor, prop.major, prop.minor);
 			}
 		}
 		else { return -1; }
@@ -49,22 +49,29 @@ int main() {
 			set(CUDA_ARCHS ${fprintf_output} CACHE STRING "CUDA Arch")			
 		else()
 			message(STATUS "GPU architectures auto-detect failed. Will build for sm_70.")      
-			set(CUDA_ARCHS #"--generate-code=arch=compute_35,code=sm_35;"
-						   #"--generate-code=arch=compute_37,code=sm_37;"
-			               #"--generate-code=arch=compute_50,code=sm_50;"
-			               #"--generate-code=arch=compute_52,code=sm_52;"
-			               #"--generate-code=arch=compute_60,code=sm_60;"
-			               #"--generate-code=arch=compute_61,code=sm_61;"
-			               --generate-code=arch=compute_70,code=sm_70;
-			               #"--generate-code=arch=compute_72,code=sm_72;"
-			               #"--generate-code=arch=compute_75,code=sm_75;"
+			set(CUDA_ARCHS #"--generate-code=arch=compute_35,code=sm_35"
+						   #"--generate-code=arch=compute_37,code=sm_37"
+			               #"--generate-code=arch=compute_50,code=sm_50"
+			               #"--generate-code=arch=compute_52,code=sm_52"
+			               #"--generate-code=arch=compute_60,code=sm_60"
+			               #"--generate-code=arch=compute_61,code=sm_61"
+			               --generate-code=arch=compute_70,code=sm_70
+			               #"--generate-code=arch=compute_72,code=sm_72"
+			               #"--generate-code=arch=compute_75,code=sm_75"
 						   CACHE STRING "CUDA Arch")			
 		endif()  
 	endif()	
 	message(STATUS "CUDA_ARCHS= " ${CUDA_ARCHS})	
 	if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
-		#https://gitlab.kitware.com/cmake/cmake/-/issues/18265	
-		list(APPEND CMAKE_CUDA_FLAGS "${CUDA_ARCHS}")	
+		#https://gitlab.kitware.com/cmake/cmake/-/issues/18265
+		# Split CUDA_ARCHS by spaces and append each flag separately
+		string(STRIP "${CUDA_ARCHS}" CUDA_ARCHS_STRIPPED)
+		string(REPLACE " " ";" CUDA_ARCHS_LIST "${CUDA_ARCHS_STRIPPED}")
+		foreach(arch_flag ${CUDA_ARCHS_LIST})
+			if(arch_flag)
+				list(APPEND CMAKE_CUDA_FLAGS "${arch_flag}")
+			endif()
+		endforeach()
 	endif ()	
 endif()
 ###################################################################################
